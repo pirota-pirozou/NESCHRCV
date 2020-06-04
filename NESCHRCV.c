@@ -12,6 +12,7 @@
 #include "pngctrl.h"
 
 #define INFILE_EXT  ".png"
+#define OUTFILE_EXT ".chr"
 
 static int * pPal_order = NULL;
 
@@ -19,7 +20,6 @@ static char infilename[256];
 static char outfilename[256];
 
 static int main_result = 0;
-//static int pal_num;
 static int spr_num;
 
 static int pal_cou;
@@ -51,6 +51,15 @@ static void usage(void)
     exit(0);
 }
 
+// EDGEパレットインデックスからNESパレットインデックスに変換
+static int edge2nes(int idx)
+{
+	int y = (idx >> 4);
+	int x = (idx & 3);
+
+	return (x << 4) + y;
+}
+
 /////////////////////////////////////
 // main
 /////////////////////////////////////
@@ -68,7 +77,7 @@ int main(int argc, char *argv[])
 	memset(infilename, 0, sizeof(infilename) );
 	memset(outfilename, 0, sizeof(outfilename) );
 	
-    printf("PNG to NESCHR Converter " __DATE__ "," __TIME__ " Programmed by pirota\n");
+    printf("PNG to NESCHR Converter Ver0.00 " __DATE__ "," __TIME__ " Programmed by pirota\n");
 
     if (argc <= 1)
         usage();
@@ -83,9 +92,10 @@ int main(int argc, char *argv[])
 			{
 			case 'b':
 				opt_b = atoi(argv[i]+2);
-                if (opt_b ==0)
-                  opt_b = 256;
-                
+				if (opt_b == 0)
+				{
+					opt_b = 256;
+				}
 //				printf("opt_b=%d\n",opt_b);
 				break;
 			case 'd':
@@ -102,6 +112,7 @@ int main(int argc, char *argv[])
 				break;
 			default:
 				printf("-%c オプションが違います。\n",argv[i][1]);
+				break;
 			}
 
 			continue;
@@ -129,7 +140,7 @@ int main(int argc, char *argv[])
 	if (!outfilename[0])
 	{
 		// 出力ファイルネーム
-		sprintf(outfilename, "spr.dat");
+		sprintf(outfilename, "nes.chr");
 	}
 	
     // ファイル読み込み処理
@@ -162,8 +173,10 @@ int main(int argc, char *argv[])
 	memset(pal_buf, -1, sizeof(int)*256);
 
     // 変換処理
-    if (cvjob()<0)
+	if (cvjob() < 0)
+	{
 		goto cvEnd;
+	}
     
 cvEnd:
     // 後始末
@@ -177,15 +190,21 @@ cvEnd:
 	
 	// パレット置換出力開放
 	if (pPal_order != NULL)
+	{
 		free(pPal_order);
+	}
 	
 	// スプライト出力バッファ開放
 	if (outbuf != NULL)
+	{
 		free(outbuf);
+	}
 
 	// パックバッファ開放
 	if (dibbuf != NULL)
+	{
 		free(dibbuf);
+	}
 
 	return main_result;
 }
@@ -302,7 +321,7 @@ static int cvjob(void)
 	FILE *fp;
 
 	bi = (BITMAPINFOHEADER *)dibbuf;
-	spr_num = (bi->biWidth >> 3) * (bi->biHeight >> 3);					/* スプライト個数 */
+	spr_num = (bi->biWidth >> 3) * (bi->biHeight >> 3);					// スプライト個数/
 
 	// 透明色の設定
 	if (!opt_b)
@@ -378,17 +397,17 @@ static int cvjob(void)
     
 	// パレット出力
 	dibpal = (RGBQUAD *)((u_char *) dibbuf + sizeof(BITMAPINFOHEADER));
-	fputc(pal_cou-1, fp);												/* パレット個数 */
+	fputc(pal_cou-1, fp);												// パレット個数
 	for (i=0; i<pal_cou; i++)
 	{
 		paltmp = dibpal + pPal_order[i];
-		fputc(paltmp->rgbRed, fp);										/* パレット赤 */
-		fputc(paltmp->rgbGreen, fp);									/* パレット緑 */
-		fputc(paltmp->rgbBlue, fp);										/* パレット青 */
+		fputc(paltmp->rgbRed, fp);										// パレット赤
+		fputc(paltmp->rgbGreen, fp);									// パレット緑
+		fputc(paltmp->rgbBlue, fp);										// パレット青
 	}
 
 	// パターン出力
-	fputc(spr_num-1, fp);												/* パターン個数 */
+	fputc(spr_num-1, fp);												// パターン個数
 	a = fwrite(outbuf, 1, 64*spr_num, fp);
 	if (a != (64*spr_num))
 	{
@@ -404,4 +423,3 @@ static int cvjob(void)
 
 	return 0;
 }
-
