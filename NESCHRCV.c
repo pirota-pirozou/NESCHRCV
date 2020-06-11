@@ -15,6 +15,7 @@
 #define OUTFILE_EXT ".chr"
 
 static int * pPal_order = NULL;
+static u_char *outbuf = NULL;
 
 static char infilename[256];
 static char outfilename[256];
@@ -24,10 +25,13 @@ static int spr_num;
 
 static int pal_cou;
 
-static int *pal_buf = NULL;
-static u_char *outbuf = NULL;
+static int width;
+static int height;
 
 PDIB dibbuf = NULL;
+
+static int *col_num_buf = NULL;											// カラー使用数バッファ
+static u_int *col_idx_buf = NULL;										// パレットインデックスバッファ
 
 static int opt_d = 0;													// デバッグオプション
 
@@ -39,8 +43,6 @@ static int cvjob(void);
 static void usage(void)
 {
     printf("usage: NESCHRCV infile[" INFILE_EXT "] OutFile\n"\
-		   "\t-n\t色をパレット０(0-31)に正規化\n"
-		   "\t-p\t64以降の色を32台に正規化（せさみ用）\n"
 		   "\t-d\tDIBファイルも出力（デバッグ用）\n"
 		   );
 
@@ -130,14 +132,23 @@ int main(int argc, char *argv[])
     if (readjob()<0)
 		goto cvEnd;
 
+
+	// 各種バッファの確保
+	col_num_buf = malloc(sizeof(int)*(width/16)*(height/16));				// カラー使用数バッファ
+	memset(col_num_buf, 0, sizeof(int)*(width / 16)*(height / 16));
+	col_idx_buf = malloc(sizeof(u_int)*(width/16)*(height/16));				// パレットインデックスバッファ
+	memset(col_idx_buf, 0, sizeof(int)*(width/16)*(height/16));
+
+
 	// 出力バッファの確保
-	outbuf = (u_char *) malloc(64 * 256);
+	outbuf = (u_char *) malloc((width/8) * (height*2));
 	if (outbuf == NULL)
 	{
 		printf("出力バッファは確保できません\n");
 		goto cvEnd;
 	}
 
+#if 0
 	// パレット置換バッファの確保
 	pPal_order = (int *) malloc(sizeof(int) * 256);
 	if (pPal_order == NULL)
@@ -154,6 +165,7 @@ int main(int argc, char *argv[])
 		return -1;
 	}
 	memset(pal_buf, -1, sizeof(int)*256);
+#endif
 
     // 変換処理
 	if (cvjob() < 0)
@@ -162,8 +174,20 @@ int main(int argc, char *argv[])
 	}
     
 cvEnd:
-    // 後始末
+	// 後始末
+	// パレットインデックスバッファ
+	if (col_idx_buf != NULL)
+	{
+		free(col_idx_buf);
+	}
 
+	// パレット使用数バッファ
+	if (col_num_buf != NULL)
+	{
+		free(col_num_buf);
+	}
+
+/*
 	// パレットバッファ開放
 	if (pal_buf != NULL)
 	{
@@ -176,7 +200,7 @@ cvEnd:
 	{
 		free(pPal_order);
 	}
-	
+*/
 	// スプライト出力バッファ開放
 	if (outbuf != NULL)
 	{
@@ -241,11 +265,26 @@ static int readjob(void)
 	bf.bfSize = sizeof(bf);
 	bf.bfOffBits = sizeof(BITMAPFILEHEADER)+sizeof(BITMAPINFOHEADER)+sizeof(RGBQUAD)*bi->biClrUsed;
 
-	// EDGEパレットへ変換
-	for (yl=0; yl<bi->biHeight; yl++)
+	width = bi->biWidth;
+	height = bi->biHeight;
+
+	if (width != 128 || height != 128)
 	{
-		pimg = (u_char *) dibbuf + (sizeof(BITMAPINFOHEADER)+sizeof(RGBQUAD)*bi->biClrUsed) + (yl * bi->biWidth);
-		for (xl=0; xl<bi->biWidth; xl++)
+		printf("Error:画像サイズは128x128px しか受け付けません。\n");
+		return -1;
+	}
+
+	if (bi->biBitCount != 8)
+	{
+		printf("Error:画像ファイルは インデックスカラー しか受け付けません。\n");
+		return -1;
+	}
+
+	// EDGEパレットへ変換
+	for (yl=0; yl<height; yl++)
+	{
+		pimg = (u_char *) dibbuf + (sizeof(BITMAPINFOHEADER)+sizeof(RGBQUAD)*bi->biClrUsed) + (yl * width);
+		for (xl=0; xl<width; xl++)
 		{
 			a = *pimg;
 			a = edge2nes(a);
@@ -276,7 +315,7 @@ static int readjob(void)
 static int cvjob(void)
 {
 	BITMAPINFOHEADER *bi;
-	int i,j;
+	int i,j,k;
 	int xl,yl;
 	int a;
 	u_char *pimg;
@@ -285,27 +324,24 @@ static int cvjob(void)
 	FILE *fp;
 
 	bi = (BITMAPINFOHEADER *)dibbuf;
-	spr_num = (bi->biWidth >> 3) * (bi->biHeight >> 3);					// スプライト個数
-
-	// パレット最適化無し
-	for (i=0; i<256; i++)
-	{
-		pal_buf[i]=i;
-		pPal_order[i]=i;
-	}
-	pal_cou=256;
+	spr_num = (width >> 3) * (height >> 3);					// スプライト個数
 
 	// 変換処理
 	outptr = outbuf;													// スプライト出力バッファの初期化
-	for (yl=0; yl<bi->biHeight; yl+=8)
+	int* ptr_col_num = col_num_buf;
+	u_int* ptr_idx_buf = col_idx_buf;
+
+	for (yl=0; yl<height; yl+=16)
 	{
-		for (xl=0; xl<bi->biWidth; xl+=8)
+		for (xl=0; xl<width; xl+=16)
 		{
 			pimg = (u_char *) dibbuf + (sizeof(BITMAPINFOHEADER)+sizeof(RGBQUAD)*bi->biClrUsed);
 			pimg += ((yl * bi->biWidth) + xl);
-			for (i=0; i<8; i++)
+			int pal_col = 0;
+
+			for (i=0; i<16; i++)
 			{
-				for (j=0; j<8; j++)
+				for (j=0; j<16; j++)
 				{
 					a = *(pimg++);
 					if (pal_buf[a]>=0)
@@ -323,8 +359,10 @@ static int cvjob(void)
 					}
 					
 				}
-				pimg += (bi->biWidth - 8);
+				pimg += (width - 16);
 			}
+			ptr_col_num++;
+			ptr_idx_buf++;
 		}
 
 	}
