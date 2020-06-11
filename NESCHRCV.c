@@ -29,10 +29,9 @@ static u_char *outbuf = NULL;
 
 PDIB dibbuf = NULL;
 
-static int opt_b = 0;													/* ベタ出力オプション */
-static int opt_d = 0;													/* デバッグオプション */
-static int opt_p = 0;													/* パレット正規化オプション */
-static int opt_n = 0;													/* パレット正規化オプション２ */
+static int opt_d = 0;													// デバッグオプション
+static int opt_p = 0;													// パレット正規化オプション
+static int opt_n = 0;													// パレット正規化オプション２
 
 static int getfilesize(char *);
 static int readjob(void);
@@ -42,7 +41,6 @@ static int cvjob(void);
 static void usage(void)
 {
     printf("usage: NESCHRCV infile[" INFILE_EXT "] OutFile\n"\
-		   "\t-b[1-256]\tパレット最適化なしで変換（省略時には256）\n" \
 		   "\t-n\t色をパレット０(0-31)に正規化\n"
 		   "\t-p\t64以降の色を32台に正規化（せさみ用）\n"
 		   "\t-d\tDIBファイルも出力（デバッグ用）\n"
@@ -80,7 +78,10 @@ int main(int argc, char *argv[])
     printf("PNG to NESCHR Converter Ver0.00 " __DATE__ "," __TIME__ " Programmed by pirota\n");
 
     if (argc <= 1)
-        usage();
+	{
+		usage();
+	}
+        
 
 	for (i=1; i<argc; i++)
 	{
@@ -90,14 +91,6 @@ int main(int argc, char *argv[])
 			// スイッチ
 			switch (argv[i][1])
 			{
-			case 'b':
-				opt_b = atoi(argv[i]+2);
-				if (opt_b == 0)
-				{
-					opt_b = 256;
-				}
-//				printf("opt_b=%d\n",opt_b);
-				break;
 			case 'd':
 				opt_d = 1;
 //				printf("opt_d\n");
@@ -259,13 +252,17 @@ static int readjob(void)
 	bf.bfOffBits = sizeof(BITMAPFILEHEADER)+sizeof(BITMAPINFOHEADER)+sizeof(RGBQUAD)*bi->biClrUsed;
 
     // 色コード正規化
-    if (opt_p) {
-        for (yl=0; yl<bi->biHeight; yl++) {
+    if (opt_p)
+	{
+        for (yl=0; yl<bi->biHeight; yl++)
+		{
             pimg = (u_char *) dibbuf + (sizeof(BITMAPINFOHEADER)+sizeof(RGBQUAD)*bi->biClrUsed) + (yl * bi->biWidth);
-            for (xl=0; xl<bi->biWidth; xl++) {
+            for (xl=0; xl<bi->biWidth; xl++)
+			{
                 a = *pimg;
                 // パレット１に強制（せさみ専用）
-                if (a > 64) {
+                if (a > 64)
+				{
                     a = (a & 0x1f) | 0x20;
                     *pimg = a;
                 }
@@ -273,12 +270,16 @@ static int readjob(void)
             }
         }
 
-    } else // if (opt_p)
-    if (opt_n) {
+    }
+	else // if (opt_p)
+    if (opt_n)
+	{
         //パレット正規化 0-31
-        for (yl=0; yl<bi->biHeight; yl++) {
+        for (yl=0; yl<bi->biHeight; yl++)
+		{
             pimg = (u_char *) dibbuf + (sizeof(BITMAPINFOHEADER)+sizeof(RGBQUAD)*bi->biClrUsed) + (yl * bi->biWidth);
-            for (xl=0; xl<bi->biWidth; xl++) {
+            for (xl=0; xl<bi->biWidth; xl++)
+			{
                 a = *pimg;
                 // パレット０に強制
                 a &= 0x1f;
@@ -321,26 +322,15 @@ static int cvjob(void)
 	FILE *fp;
 
 	bi = (BITMAPINFOHEADER *)dibbuf;
-	spr_num = (bi->biWidth >> 3) * (bi->biHeight >> 3);					// スプライト個数/
+	spr_num = (bi->biWidth >> 3) * (bi->biHeight >> 3);					// スプライト個数
 
-	// 透明色の設定
-	if (!opt_b)
+	// パレット最適化無し
+	for (i=0; i<256; i++)
 	{
-		// パレット最適化
-		pal_buf[0]=0;
-		pPal_order[0]=0;
-		pal_cou=1;
+		pal_buf[i]=i;
+		pPal_order[i]=i;
 	}
-	else
-	{
-		// パレット最適化無し
-		for (i=0; i<256; i++)
-		{
-			pal_buf[i]=i;
-			pPal_order[i]=i;
-		}
-		pal_cou=256;
-	}
+	pal_cou=256;
 
 	// 変換処理
 	outptr = outbuf;													// スプライト出力バッファの初期化
@@ -383,17 +373,6 @@ static int cvjob(void)
 		printf("Can't write '%s'.\n", outfilename);
 		return -1;
 	}
-
-    if (opt_b > 0) {
-        // ベタ出力オプション時
-        if (pal_cou < opt_b) {
-//            printf("warning:-b指定の数値(%d)が使用色数より多くなっています。\n",opt_b);
-        } else {
-            printf("パレット出力数を%dに設定します。\n",opt_b);
-            pal_cou = opt_b;
-        }
-    }
-
     
 	// パレット出力
 	dibpal = (RGBQUAD *)((u_char *) dibbuf + sizeof(BITMAPINFOHEADER));

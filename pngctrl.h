@@ -1,5 +1,7 @@
 //
 
+#pragma once
+
 #ifndef _PNGCTRL_H_
 #define _PNGCTRL_H_
 
