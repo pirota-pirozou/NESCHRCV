@@ -30,8 +30,6 @@ static u_char *outbuf = NULL;
 PDIB dibbuf = NULL;
 
 static int opt_d = 0;													// デバッグオプション
-static int opt_p = 0;													// パレット正規化オプション
-static int opt_n = 0;													// パレット正規化オプション２
 
 static int getfilesize(char *);
 static int readjob(void);
@@ -94,14 +92,6 @@ int main(int argc, char *argv[])
 			case 'd':
 				opt_d = 1;
 //				printf("opt_d\n");
-				break;
-			case 'p':
-				opt_p = 1;
-//				printf("opt_p\n");
-				break;
-			case 'n':
-				opt_n = 1;
-//				printf("opt_n\n");
 				break;
 			default:
 				printf("-%c オプションが違います。\n",argv[i][1]);
@@ -251,44 +241,17 @@ static int readjob(void)
 	bf.bfSize = sizeof(bf);
 	bf.bfOffBits = sizeof(BITMAPFILEHEADER)+sizeof(BITMAPINFOHEADER)+sizeof(RGBQUAD)*bi->biClrUsed;
 
-    // 色コード正規化
-    if (opt_p)
+	// EDGEパレットへ変換
+	for (yl=0; yl<bi->biHeight; yl++)
 	{
-        for (yl=0; yl<bi->biHeight; yl++)
+		pimg = (u_char *) dibbuf + (sizeof(BITMAPINFOHEADER)+sizeof(RGBQUAD)*bi->biClrUsed) + (yl * bi->biWidth);
+		for (xl=0; xl<bi->biWidth; xl++)
 		{
-            pimg = (u_char *) dibbuf + (sizeof(BITMAPINFOHEADER)+sizeof(RGBQUAD)*bi->biClrUsed) + (yl * bi->biWidth);
-            for (xl=0; xl<bi->biWidth; xl++)
-			{
-                a = *pimg;
-                // パレット１に強制（せさみ専用）
-                if (a > 64)
-				{
-                    a = (a & 0x1f) | 0x20;
-                    *pimg = a;
-                }
-                pimg++;
-            }
-        }
-
-    }
-	else // if (opt_p)
-    if (opt_n)
-	{
-        //パレット正規化 0-31
-        for (yl=0; yl<bi->biHeight; yl++)
-		{
-            pimg = (u_char *) dibbuf + (sizeof(BITMAPINFOHEADER)+sizeof(RGBQUAD)*bi->biClrUsed) + (yl * bi->biWidth);
-            for (xl=0; xl<bi->biWidth; xl++)
-			{
-                a = *pimg;
-                // パレット０に強制
-                a &= 0x1f;
-                *pimg = a;
-                pimg++;
-            }
-        }
-
-    } // if (opt_n)
+			a = *pimg;
+			a = edge2nes(a);
+			pimg++;
+		}
+	}
 
 	if (opt_d)
 	{
