@@ -14,7 +14,7 @@
 #define INFILE_EXT  ".png"
 #define OUTFILE_EXT ".chr"
 
-#define swap_byte(a,b)	do { u_char tmp = *a; *a = *b; *b = tmp; } while(0)
+#define swap_byte(a, b)	do { u_char tmp = *a; *a = *b; *b = tmp; } while(0)
 
 static int * pPal_order = NULL;
 static u_char *outbuf = NULL;
@@ -61,19 +61,19 @@ static int edge2nes(int idx)
 }
 
 // バブルソート
-static void BubbleSort(u_char *a)
+static void bubblesort(u_char *a)
 {
 	BOOL isEnd = FALSE;
 	int finAdjust = 1;
 	int i;
-	while (!isEnd == FALSE)
+	while (isEnd == FALSE)
 	{
 		BOOL wasSwap = FALSE;
 		for (i = 0; i < 4 - finAdjust; i++)
 		{
-			if (a[i] < a[i+1])
+			if (a[i+1] < a[i])
 			{
-				swap_byte(&a[i], &a[i+1]);
+				swap_byte(&(a[i+1]), &(a[i]));
 				wasSwap = TRUE;
 			}
 		}
@@ -103,6 +103,10 @@ int main(int argc, char *argv[])
 	memset(outfilename, 0, sizeof(outfilename) );
 	
     printf("PNG to NESCHR Converter Ver0.00 " __DATE__ "," __TIME__ " Programmed by pirota\n");
+
+	// bubble sort test
+//	static u_char test[] = { 0, 3, 4, 1, 0 };
+//	bubblesort(test);
 
     if (argc <= 1)
 	{
