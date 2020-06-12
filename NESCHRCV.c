@@ -14,6 +14,8 @@
 #define INFILE_EXT  ".png"
 #define OUTFILE_EXT ".chr"
 
+#define swap_byte(a,b)	do { u_char tmp = *a; *a = *b; *b = tmp; } while(0)
+
 static int * pPal_order = NULL;
 static u_char *outbuf = NULL;
 
@@ -56,6 +58,31 @@ static int edge2nes(int idx)
 	int x = (idx & 3);
 
 	return (x << 4) + y;
+}
+
+// バブルソート
+static void BubbleSort(u_char *a)
+{
+	BOOL isEnd = FALSE;
+	int finAdjust = 1;
+	int i;
+	while (!isEnd == FALSE)
+	{
+		BOOL wasSwap = FALSE;
+		for (i = 0; i < 4 - finAdjust; i++)
+		{
+			if (a[i] < a[i+1])
+			{
+				swap_byte(&a[i], &a[i+1]);
+				wasSwap = TRUE;
+			}
+		}
+		if (!wasSwap)
+		{
+			isEnd = TRUE;
+		}
+		finAdjust++;
+	}
 }
 
 /////////////////////////////////////
@@ -344,6 +371,7 @@ static int cvjob(void)
 				for (j=0; j<16; j++)
 				{
 					a = *(pimg++);
+#if 0
 					if (pal_buf[a]>=0)
 					{
 						// 既に使用済みの色
@@ -357,7 +385,7 @@ static int cvjob(void)
 						*(outptr++) = (u_char) pal_buf[a];
 						pal_cou++;
 					}
-					
+#endif					
 				}
 				pimg += (width - 16);
 			}
