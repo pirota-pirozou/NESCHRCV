@@ -14,10 +14,21 @@
 #define INFILE_EXT  ".png"
 #define OUTFILE_EXT ".chr"
 
+#define PAL_LINES	32		// 最大パレット本数
+
 #define swap_byte(a, b)	do { u_char tmp = *a; *a = *b; *b = tmp; } while(0)
 
-static int * pPal_order = NULL;
+typedef struct __pal_collection
+{
+	int		used;		// 使用された数
+	u_char	pal[4];		// NESパレットインデックス
+
+} TPAL_COLLECTIONS, *pTPAL_COLLCECTION;
+
+static TPAL_COLLECTIONS nespal[PAL_LINES];
+
 static u_char *outbuf = NULL;
+static u_char *pat_ptr = NULL;
 
 static char infilename[256];
 static char outfilename[256];
@@ -31,9 +42,6 @@ static int width;
 static int height;
 
 PDIB dibbuf = NULL;
-
-static int *col_num_buf = NULL;											// カラー使用数バッファ
-static u_int *col_idx_buf = NULL;										// パレットインデックスバッファ
 
 static int opt_d = 0;													// デバッグオプション
 
@@ -104,7 +112,7 @@ int main(int argc, char *argv[])
 	
     printf("PNG to NESCHR Converter Ver0.00 " __DATE__ "," __TIME__ " Programmed by pirota\n");
 
-	// bubble sort test
+	//----------- bubble sort test --------------
 //	static u_char test[] = { 0, 3, 4, 1, 0 };
 //	bubblesort(test);
 
@@ -165,10 +173,9 @@ int main(int argc, char *argv[])
 
 
 	// 各種バッファの確保
-	col_num_buf = malloc(sizeof(int)*(width/16)*(height/16));				// カラー使用数バッファ
-	memset(col_num_buf, 0, sizeof(int)*(width / 16)*(height / 16));
-	col_idx_buf = malloc(sizeof(u_int)*(width/16)*(height/16));				// パレットインデックスバッファ
-	memset(col_idx_buf, 0, sizeof(int)*(width/16)*(height/16));
+
+	// NESパレットのワーク
+	memset(nespal, 0, sizeof(nespal));
 
 
 	// 出力バッファの確保
@@ -179,25 +186,6 @@ int main(int argc, char *argv[])
 		goto cvEnd;
 	}
 
-#if 0
-	// パレット置換バッファの確保
-	pPal_order = (int *) malloc(sizeof(int) * 256);
-	if (pPal_order == NULL)
-	{
-		printf("パレット置換バッファは確保できません\n");
-		goto cvEnd;
-	}
-	
-	// パレットバッファの確保
-	pal_buf = (int *) malloc(sizeof(int)*256);
-	if (pal_buf == NULL)
-	{
-		printf("パレットバッファが確保できません\n");
-		return -1;
-	}
-	memset(pal_buf, -1, sizeof(int)*256);
-#endif
-
     // 変換処理
 	if (cvjob() < 0)
 	{
@@ -206,32 +194,12 @@ int main(int argc, char *argv[])
     
 cvEnd:
 	// 後始末
-	// パレットインデックスバッファ
-	if (col_idx_buf != NULL)
+	// NESパターン出力バッファ開放
+	if (pat_ptr != NULL)
 	{
-		free(col_idx_buf);
+		free(pat_ptr);
 	}
 
-	// パレット使用数バッファ
-	if (col_num_buf != NULL)
-	{
-		free(col_num_buf);
-	}
-
-/*
-	// パレットバッファ開放
-	if (pal_buf != NULL)
-	{
-		free(pal_buf);
-		pal_buf = NULL;
-	}
-	
-	// パレット置換出力開放
-	if (pPal_order != NULL)
-	{
-		free(pPal_order);
-	}
-*/
 	// スプライト出力バッファ開放
 	if (outbuf != NULL)
 	{
@@ -323,6 +291,9 @@ static int readjob(void)
 		}
 	}
 
+	pat_ptr = (u_char *)malloc(width*height);
+	memset(pat_ptr, 0, width*height);
+
 	if (opt_d)
 	{
 		// デバッグオプションがonならDIBファイル出力
@@ -349,7 +320,7 @@ static int cvjob(void)
 	int i,j,k;
 	int xl,yl;
 	int a;
-	u_char *pimg;
+	u_char *pimg, *ppat;
 	u_char *outptr;
 	RGBQUAD *dibpal, *paltmp;
 	FILE *fp;
@@ -359,8 +330,7 @@ static int cvjob(void)
 
 	// 変換処理
 	outptr = outbuf;													// スプライト出力バッファの初期化
-	int* ptr_col_num = col_num_buf;
-	u_int* ptr_idx_buf = col_idx_buf;
+	int now_line = 0;
 
 	for (yl=0; yl<height; yl+=16)
 	{
@@ -368,34 +338,65 @@ static int cvjob(void)
 		{
 			pimg = (u_char *) dibbuf + (sizeof(BITMAPINFOHEADER)+sizeof(RGBQUAD)*bi->biClrUsed);
 			pimg += ((yl * bi->biWidth) + xl);
-			int pal_col = 0;
+			ppat = pat_ptr + (yl * width) + xl;
+			int pal_cou = 0;
+			u_char * palptr = &nespal[pal_cou].pal[1];
 
+			// 16x16 px 1block
 			for (i=0; i<16; i++)
 			{
-				for (j=0; j<16; j++)
+				for (j=0; j<16; j++, pimg++, ppat++)
 				{
-					a = *(pimg++);
-#if 0
-					if (pal_buf[a]>=0)
+					a = *(pimg);
+					if (a == 0)
 					{
-						// 既に使用済みの色
-						*(outptr++) = (u_char) pal_buf[a];
+						continue;
 					}
-					else
+					BOOL bFOUND = FALSE;
+					// 現在のパレットラインの検索
+					for (k = 1; k < 4; k++)
 					{
-						// 新規に見つけた色
-						pal_buf[a] = pal_cou;							// 利用インデックス
-						pPal_order[pal_cou] = a;						// 逆引き
-						*(outptr++) = (u_char) pal_buf[a];
-						pal_cou++;
-					}
-#endif					
-				}
-				pimg += (width - 16);
-			}
-			ptr_col_num++;
-			ptr_idx_buf++;
-		}
+						if (a == nespal[pal_cou].pal[k])
+						{
+							// 使用済みの色
+							bFOUND = TRUE;
+							// NES INDEX PAT
+							*ppat = k;
+							break;
+						}
+						else
+						{
+							// 新規登録の色
+							if (pal_cou >= 4) {
+								// TODO: パレットオーバーフロー
+								printf("warning: パレットの使用数が3色を越えています。\n");
+								continue;
+							}
+							else
+							{
+								// 新規色の登録
+								nespal[now_line].pal[k] = a;
+								nespal[now_line].used++;
+								// NES INDEX PAT
+								*ppat = k;
+								bFOUND = TRUE;
+								break;
+							}
+						} // for k
+						// 色が見つからなかった場合
+						if (!bFOUND)
+						{
+
+						}
+
+					} // j
+				}  // i
+			} // xl
+
+			pimg += (width - 16);
+			ppat += (width - 16);
+
+		} // yl
 
 	}
 
@@ -408,6 +409,7 @@ static int cvjob(void)
 	}
     
 	// パレット出力
+#if 0
 	dibpal = (RGBQUAD *)((u_char *) dibbuf + sizeof(BITMAPINFOHEADER));
 	fputc(pal_cou-1, fp);												// パレット個数
 	for (i=0; i<pal_cou; i++)
@@ -417,15 +419,17 @@ static int cvjob(void)
 		fputc(paltmp->rgbGreen, fp);									// パレット緑
 		fputc(paltmp->rgbBlue, fp);										// パレット青
 	}
+#endif
 
 	// パターン出力
+#if 0
 	fputc(spr_num-1, fp);												// パターン個数
 	a = fwrite(outbuf, 1, 64*spr_num, fp);
 	if (a != (64*spr_num))
 	{
 		printf("'%s' ファイルが正しく書き込めませんでした！\n", outfilename);
 	}
-
+#endif
 	fclose(fp);
 
 	// 結果出力
