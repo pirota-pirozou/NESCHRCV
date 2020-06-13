@@ -464,7 +464,7 @@ static int cvjob(void)
 	} // yl
 
 	printf("パレット本数；%d\n", now_line);
-
+	pal_cou = now_line;
 
 	// ファイル出力
 	fp = fopen(outfilename,"wb");
