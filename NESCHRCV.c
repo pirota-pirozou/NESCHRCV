@@ -14,7 +14,7 @@
 #define INFILE_EXT  ".png"
 #define OUTFILE_EXT ".chr"
 
-#define PAL_LINES	32		// 最大パレット本数
+#define PAL_LINES	64		// 最大パレット本数
 
 #define swap_byte(a, b)	do { u_char tmp = *a; *a = *b; *b = tmp; } while(0)
 
@@ -44,6 +44,10 @@ static int height;
 PDIB dibbuf = NULL;
 
 static int opt_d = 0;													// デバッグオプション
+
+static int now_line = 0;
+
+
 
 static int getfilesize(char *);
 static int readjob(void);
@@ -279,7 +283,7 @@ static int readjob(void)
 		return -1;
 	}
 
-	// EDGEパレットへ変換
+	// EDGE→NES パレットへ変換
 	for (yl=0; yl<height; yl++)
 	{
 		pimg = (u_char *) dibbuf + (sizeof(BITMAPINFOHEADER)+sizeof(RGBQUAD)*bi->biClrUsed) + (yl * width);
@@ -287,6 +291,7 @@ static int readjob(void)
 		{
 			a = *pimg;
 			a = edge2nes(a);
+			*pimg = a;
 			pimg++;
 		}
 	}
@@ -311,94 +316,155 @@ static int readjob(void)
 	return 0;
 }
 
+//
+static void search_reg_palet(u_char *ptr, int stride)
+{
+	int i, j, k;
+	int found;
+	u_char * pimg = ptr;
+	u_char a;
+
+	TPAL_COLLECTIONS paltmp;
+	memset(&paltmp, 0, sizeof(paltmp));
+
+	// 16x16で使っている色を調べる
+	// 16x16 px 1block
+	for (i = 0; i < 16; i++)
+	{
+		for (j = 0; j < 16; j++, pimg++)
+		{
+			a = *(pimg);
+			if (a == 0)
+			{
+				continue;
+			}
+			found = 0;
+			// 現在のパレットラインの検索
+			for (k = 1; k < 4; k++)
+			{
+				if (a == paltmp.pal[k])
+				{
+					// 使用済みの色
+					found = k;
+					break;
+				}
+			}
+			// 色が見つからなかった場合、新規登録
+			if (found == 0)
+			{
+				k = (++paltmp.used);
+				if (k >= 4)
+				{
+					// パレットオーバーフロー
+					printf("warning: パレットの使用数が3色を越えています。\n");
+					k =	(--paltmp.used);
+				}
+				// 新規色の登録
+				paltmp.pal[k] = a;
+			}
+
+		} // j
+		pimg += (stride - 16);
+
+	}  // i
+	// パレットのハッシュ作成
+	bubblesort(paltmp.pal);
+
+	// ハッシュに合わせてインデックス化する
+	pimg = ptr;
+	for (i = 0; i < 16; i++)
+	{
+		for (j = 0; j < 16; j++, pimg++)
+		{
+			a = *(pimg);
+			if (a == 0)
+			{
+				continue;
+			}
+			found = 0;
+			// 現在のパレットラインの検索
+			for (k = 1; k < 4; k++)
+			{
+				if (a == paltmp.pal[k])
+				{
+					// 使用済みの色
+					found = k;
+					break;
+				}
+			}
+
+			// パレットをインデックスに置換
+			*pimg = (u_char)found;
+
+		} // j
+		pimg += (stride - 16);
+	} // i
+
+	// 新規ハッシュの時のみパレット登録
+	DWORD hash1 = *((DWORD *)&paltmp.pal);
+	DWORD hash2 = *((DWORD *)&nespal[now_line].pal);
+	if (hash1 != hash2)
+	{
+		if (now_line >= PAL_LINES)
+		{
+			printf("Error: パレット行数が %d を越えました。", PAL_LINES);
+		}
+		else
+		{
+			nespal[now_line++] = paltmp;
+			printf("\t.byte\t");
+			for (i = 0; i < 4; i++)
+			{
+				printf("%2d", nespal[now_line - 1].pal[i]);
+				if (i < 3)
+				{
+					putchar(',');
+				}
+				else
+				{
+					puts("");
+				}
+			}
+
+		}
+	}
+
+
+}
+
 ///////////////////////////////
 // スプライトデータに変換処理
 ///////////////////////////////
 static int cvjob(void)
 {
 	BITMAPINFOHEADER *bi;
-	int i,j,k;
 	int xl,yl;
-	int a;
-	u_char *pimg, *ppat;
+	u_char *pimg;
 	u_char *outptr;
-	RGBQUAD *dibpal, *paltmp;
 	FILE *fp;
 
 	bi = (BITMAPINFOHEADER *)dibbuf;
 	spr_num = (width >> 3) * (height >> 3);					// スプライト個数
 
 	// 変換処理
-	outptr = outbuf;													// スプライト出力バッファの初期化
-	int now_line = 0;
+	outptr = outbuf;										// スプライト出力バッファの初期化
 
+	pimg = NULL;
 	for (yl=0; yl<height; yl+=16)
 	{
 		for (xl=0; xl<width; xl+=16)
 		{
 			pimg = (u_char *) dibbuf + (sizeof(BITMAPINFOHEADER)+sizeof(RGBQUAD)*bi->biClrUsed);
 			pimg += ((yl * bi->biWidth) + xl);
-			ppat = pat_ptr + (yl * width) + xl;
-			int pal_cou = 0;
-			u_char * palptr = &nespal[pal_cou].pal[1];
+			search_reg_palet(pimg, width);
+		} // xl
 
-			// 16x16 px 1block
-			for (i=0; i<16; i++)
-			{
-				for (j=0; j<16; j++, pimg++, ppat++)
-				{
-					a = *(pimg);
-					if (a == 0)
-					{
-						continue;
-					}
-					BOOL bFOUND = FALSE;
-					// 現在のパレットラインの検索
-					for (k = 1; k < 4; k++)
-					{
-						if (a == nespal[pal_cou].pal[k])
-						{
-							// 使用済みの色
-							bFOUND = TRUE;
-							// NES INDEX PAT
-							*ppat = k;
-							break;
-						}
-						else
-						{
-							// 新規登録の色
-							if (pal_cou >= 4) {
-								// TODO: パレットオーバーフロー
-								printf("warning: パレットの使用数が3色を越えています。\n");
-								continue;
-							}
-							else
-							{
-								// 新規色の登録
-								nespal[now_line].pal[k] = a;
-								nespal[now_line].used++;
-								// NES INDEX PAT
-								*ppat = k;
-								bFOUND = TRUE;
-								break;
-							}
-						} // for k
-						// 色が見つからなかった場合
-						if (!bFOUND)
-						{
+		pimg += (width - 16);
 
-						}
+	} // yl
 
-					} // j
-				}  // i
-			} // xl
+	printf("パレット本数；%d\n", now_line);
 
-			pimg += (width - 16);
-			ppat += (width - 16);
-
-		} // yl
-
-	}
 
 	// ファイル出力
 	fp = fopen(outfilename,"wb");
